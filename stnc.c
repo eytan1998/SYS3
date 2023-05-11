@@ -1,4 +1,8 @@
 
+#include <stdlib.h>
+#include <fcntl.h>
+#include <sys/types.h>
+#include <sys/stat.h>
 
 #include <stdio.h>
 #include <string.h>
@@ -11,49 +15,570 @@
 #include <netdb.h>
 #include <unistd.h>
 #include <sys/poll.h>
+#include <time.h>
+#include <sys/time.h>
 
-#define ERROR -1
+#define ERROR 1
 #define FALSE 0
 #define TRUE 1
-#define BACKLOG 10   // how many pending connections queue will hold
 
 #define TIME_OUT 100
-#define BUFFER_SIZE 1024
+#define DATA_BUFFER_SIZE 65527
+
+#define CHAT_BUFFER_SIZE 1024
+#define PIPE_NAME "/tmp/my_pipe"
+
+#define DATA_SIZE 104857600
+
+char *generateData() {
+    char *data = malloc(DATA_SIZE);
+    for (int i = 0; i < DATA_SIZE; ++i) {
+        data[i] = '%';
+    }
+    if (data == NULL) {
+        perror("malloc data");
+        return NULL;
+    }
+    srand(time(NULL));
+    return data;
+}
+
+int server_ipv4_TCP(int chat_socket, int port, int isQuiet) {
+    int receiver_socket = socket(AF_INET, SOCK_STREAM, 0);
+    if (receiver_socket == ERROR) {
+        perror("[-]Socket error");
+        exit(1);
+    }
+    if (!isQuiet)printf("[+]server ipv4 socket created.\n");
+
+    struct sockaddr_in receiver_addr, client_addr;
+    memset(&receiver_addr, '\0', sizeof(receiver_addr));
+    receiver_addr.sin_family = AF_INET;
+    receiver_addr.sin_port = htons(port);
+    socklen_t addr_size = sizeof(client_addr);
+
+    if (setsockopt(receiver_socket, SOL_SOCKET, SO_REUSEADDR, &(int) {1}, sizeof(int)) < 0)
+        perror("[-] setsockopt(SO_REUSEADDR) failed");
+
+    if (bind(receiver_socket, (struct sockaddr *) &receiver_addr, sizeof(receiver_addr)) == ERROR) {
+        perror("[-]Bind error");
+        exit(1);
+    }
+    if (!isQuiet)printf("[+]Bind to: %d\n", port);
+
+    if (listen(receiver_socket, 1) == ERROR) {
+        perror("[-]Listen error");
+        exit(1);
+    }
+    if (!isQuiet)printf("Listening...\n");
+
+    //send to client to try connect after create socket
+    send(chat_socket, "ready", strlen("ready"), 0);
+
+    int connection_socket = accept(receiver_socket, (struct sockaddr *) &client_addr, &addr_size);
+    if (!isQuiet)printf("[+]client ipv4 connected.\n");
+
+    //get file size from sender
+    char buffer[CHAT_BUFFER_SIZE];
+    bzero(buffer, CHAT_BUFFER_SIZE);
+    recv(chat_socket, buffer, CHAT_BUFFER_SIZE, 0);
+    int receiveSize = (int) *(int *) buffer;
+    if (!isQuiet)printf("Received file size is: %d bytes, (~%d MB)\n", receiveSize, receiveSize / 1000000);
+
+    //to measure time
+    long time;
+    struct timeval start, end;
+
+    char data_buffer[DATA_BUFFER_SIZE];
+    gettimeofday(&start, NULL);
+    printf("receiving data...\n");
+    while (1) {
+        //zero the buffer
+        bzero(data_buffer, DATA_BUFFER_SIZE);
+        int bytesReceived = (int) recv(connection_socket, data_buffer, DATA_BUFFER_SIZE, 0);
+        //to track how much byte to receive
+        receiveSize -= bytesReceived;
+        if (bytesReceived == 0 || receiveSize <= 0) break;
+        //check error
+        if (bytesReceived < 0) {
+            printf("[-]Error while receiving.\n");
+            break;
+        }
+
+    }
+    gettimeofday(&end, NULL);
+    time = (end.tv_usec - start.tv_usec) / 1000;
+    printf("ipv4_tcp,%ld\n", time);
+    return 0;
+}
+
+int client_ipv4_TCP(int chat_socket, char *ip, int port, int isQuiet) {
+
+    int sock = socket(AF_INET, SOCK_STREAM, 0);
+    if (sock < 0) {
+        perror("[-]Socket error");
+        exit(1);
+    }
+    if (!isQuiet)printf("[+]client ipv4 socket created.\n");
+
+    if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &(int) {1}, sizeof(int)) < 0) {
+        perror("[-] setsockopt(SO_REUSEADDR) failed");
+    }
+
+    struct sockaddr_in addr;
+    memset(&addr, '\0', sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(port);
+    addr.sin_addr.s_addr = inet_addr(ip);
+
+    char buffer[CHAT_BUFFER_SIZE];
+    bzero(buffer, CHAT_BUFFER_SIZE);
+    recv(chat_socket, buffer, CHAT_BUFFER_SIZE, 0);
+    if (strcmp(buffer, "ready") != 0) return ERROR;
 
 
+    if (connect(sock, (struct sockaddr *) &addr, sizeof(addr)) == ERROR) {
+        perror("[-]Connection error ");
+        exit(1);
+    }
+    if (!isQuiet)printf("[+]server ipv4 connected.\n");
 
-int main(int argc, char *argv[]) {
+    char *data = generateData();
+    //sending file size
+    unsigned long un = strlen(data);
+    printf("Sending file size is: %lu bytes, (~%lu MB)\n", strlen(data), strlen(data) / 1000000);
+    send(chat_socket, &un, sizeof(unsigned long), 0);
+
+    //send data
+    send(sock, data, strlen(data) , 0);
 
 
-    if (argc < 2) {
-        printf("usage: ./stnc -c\\-s");
+    return 0;
+}
+
+int server_ipv6_TCP(int chat_socket, int port, int isQuiet) {
+    int receiver_socket = socket(AF_INET6, SOCK_STREAM, 0);
+    if (receiver_socket == ERROR) {
+        perror("[-]Socket error");
+        exit(1);
+    }
+    if (!isQuiet)printf("[+]server ipv6 socket created.\n");
+
+    struct sockaddr_in6 receiver_addr, client_addr;
+    memset(&receiver_addr, '\0', sizeof(receiver_addr));
+    receiver_addr.sin6_family = AF_INET6;
+    receiver_addr.sin6_port = htons(port);
+
+    socklen_t addr_size = sizeof(client_addr);
+
+    if (setsockopt(receiver_socket, SOL_SOCKET, SO_REUSEADDR, &(int) {1}, sizeof(int)) < 0)
+        perror("[-] setsockopt(SO_REUSEADDR) failed");
+
+    if (bind(receiver_socket, (struct sockaddr *) &receiver_addr, sizeof(receiver_addr)) == ERROR) {
+        perror("[-]Bind error");
+        exit(1);
+    }
+    if (!isQuiet)printf("[+]Bind to: %d\n", port);
+
+    if (listen(receiver_socket, 1) == ERROR) {
+        perror("[-]Listen error");
+        exit(1);
+    }
+    if (!isQuiet)printf("Listening...\n");
+
+    //send the ipv6 address to client
+    if (send(chat_socket, &receiver_addr.sin6_addr, sizeof(receiver_addr.sin6_addr), 0)== -1){
+        perror("send");
         return 1;
     }
-    if (strcmp("-c", argv[1]) == 0) {
+    //send to client to try connect after create socket
+    send(chat_socket, "ready", strlen("ready"), 0);
 
-        int sock = socket(AF_INET, SOCK_STREAM, 0);
-        if (sock < 0) {
-            perror("[-]Socket error");
-            exit(1);
+    int connection_socket = accept(receiver_socket, (struct sockaddr *) &client_addr, &addr_size);
+    if (!isQuiet)printf("[+]client ipv6 connected.\n");
+
+    //get file size from sender
+    char buffer[CHAT_BUFFER_SIZE];
+    bzero(buffer, CHAT_BUFFER_SIZE);
+    recv(chat_socket, buffer, CHAT_BUFFER_SIZE, 0);
+    int receiveSize = (int) *(int *) buffer;
+    if (!isQuiet)printf("Received file size is: %d bytes, (~%d MB)\n", receiveSize, receiveSize / 1000000);
+
+    //to measure time
+    long time;
+    struct timeval start, end;
+
+    char data_buffer[DATA_BUFFER_SIZE];
+    gettimeofday(&start, NULL);
+    printf("receiving data...\n");
+    while (1) {
+        //zero the buffer
+        bzero(data_buffer, DATA_BUFFER_SIZE);
+        int bytesReceived = (int) recv(connection_socket, data_buffer, DATA_BUFFER_SIZE, 0);
+        //to track how much byte to receive
+        receiveSize -= bytesReceived;
+        if (bytesReceived == 0 || receiveSize <= 0) break;
+        //check error
+        if (bytesReceived < 0) {
+            printf("[-]Error while receiving.\n");
+            break;
         }
-        printf("[+]TCP socket created.\n");
 
-        if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &(int) {1}, sizeof(int)) < 0) {
-            perror("[-] setsockopt(SO_REUSEADDR) failed");
+    }
+    gettimeofday(&end, NULL);
+    time = (end.tv_usec - start.tv_usec) / 1000;
+    printf("ipv6_tcp,%ld\n", time);
+    return 0;
+}
+
+int client_ipv6_TCP(int chat_socket, int port, int isQuiet) {
+
+    int sock = socket(AF_INET6, SOCK_STREAM, 0);
+    if (sock < 0) {
+        perror("[-]Socket error");
+        exit(1);
+    }
+    if (!isQuiet)printf("[+]client ipv6 socket created.\n");
+
+    if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &(int) {1}, sizeof(int)) < 0) {
+        perror("[-] setsockopt(SO_REUSEADDR) failed");
+    }
+
+    struct sockaddr_in6 addr;
+    memset(&addr, '\0', sizeof(addr));
+    addr.sin6_family = AF_INET6;
+    addr.sin6_port = htons(port);
+
+    //get address
+    if (recv(chat_socket, &addr.sin6_addr, sizeof(addr.sin6_addr), 0)==-1){
+        perror("recv");
+        return 1;
+    }
+
+    char buffer[CHAT_BUFFER_SIZE];
+    bzero(buffer, CHAT_BUFFER_SIZE);
+    recv(chat_socket, buffer, CHAT_BUFFER_SIZE, 0);
+    if (strcmp(buffer, "ready") != 0) return ERROR;
+
+
+    if (connect(sock, (struct sockaddr *) &addr, sizeof(addr)) == ERROR) {
+        perror("[-]Connection error ");
+        exit(1);
+    }
+    if (!isQuiet)printf("[+]server ipv6 connected.\n");
+
+    char *data = generateData();
+    //sending file size
+    unsigned long un = strlen(data);
+    printf("Sending file size is: %lu bytes, (~%lu MB)\n", strlen(data), strlen(data) / 1000000);
+    send(chat_socket, &un, sizeof(unsigned long), 0);
+
+    //send data
+    send(sock, data, strlen(data) , 0);
+    return 0;
+}
+
+int server_ipv4_UDP(int chat_socket, int port, int isQuiet) {
+    return 0;
+}
+
+
+int client_ipv4_UDP(int chat_socket, char *ip, int port, int isQuiet) {
+    return 0;
+}
+
+int server_ipv6_UDP(int chat_socket, int port, int isQuiet) {
+    return 0;
+}
+
+int client_ipv6_UDP(int chat_socket, int port, int isQuiet) {
+    return 0;
+}
+
+
+int server_pipe(int chat_socket, int isPerformance, int isQuiet) {
+    int fd;
+    char buffer[CHAT_BUFFER_SIZE];
+    char mesg[CHAT_BUFFER_SIZE];
+    ssize_t num_read, num_written;
+    off_t total_read = 0;
+
+
+    // Open the named pipe for reading
+    fd = open(PIPE_NAME, O_RDONLY);
+    if (fd == -1) {
+        perror("open");
+        exit(EXIT_FAILURE);
+    }
+
+    //send ready
+    send(chat_socket, "ready", strlen("ready"), 0);
+
+
+
+    //get file size from sender
+
+    bzero(buffer, CHAT_BUFFER_SIZE);
+    recv(chat_socket, buffer, CHAT_BUFFER_SIZE, 0);
+    int receiveSize = (int) *(int *) buffer;
+    bzero(buffer, CHAT_BUFFER_SIZE);
+    if (!isQuiet)printf("Received file size is: %d bytes, (~%d MB)\n", receiveSize, receiveSize / 1000000);
+
+    // Read data from the named pipe
+    while ((num_read = read(fd, buffer, CHAT_BUFFER_SIZE)) > 0) {
+        total_read += num_read;
+    }
+
+    printf("Received %ld bytes from pipe\n", total_read);
+    close(fd);
+    return 0;
+}
+
+int client_pipe(int chat_socket, int isQuiet, char *param) {
+    int fd;
+    char mesg[CHAT_BUFFER_SIZE];
+    char *buffer = generateData();
+
+    ssize_t num_read, num_written;
+    off_t total_written = 0;
+    // Create the named pipe
+    if (mkfifo(PIPE_NAME, 0666) == -1) {
+        perror("mkfifo");
+        exit(EXIT_FAILURE);
+    }
+    if (!isQuiet)printf("[+]pipe file created.\n");
+    // Open the file to be sent
+    FILE *fp = fopen("file.txt", "rb");
+    if (!fp) {
+        perror("fopen");
+        exit(EXIT_FAILURE);
+    }
+// Open the named pipe for writing
+    fd = open(PIPE_NAME, O_WRONLY);
+    if (fd == -1) {
+        perror("open");
+        exit(EXIT_FAILURE);
+    }
+    //recv ready!
+    char ready[CHAT_BUFFER_SIZE];
+    if (!isQuiet)printf("[+]pipe file open.\n");
+    bzero(ready, CHAT_BUFFER_SIZE);
+    recv(chat_socket, ready, CHAT_BUFFER_SIZE, 0);
+    if (strcmp(ready, "ready") != 0) return ERROR;
+
+// Read the buffer data and write it to the named pipe
+    while ((num_read = fread(buffer, 1, CHAT_BUFFER_SIZE, buffer)) > 0) {
+        num_written = write(fd, buffer, num_read);
+        if (num_written == -1) {
+            perror("write");
+            exit(EXIT_FAILURE);
+        }
+        total_written += num_written;
+    }
+
+    printf("Sent %ld bytes to pipe\n", total_written);
+
+    close(fd);
+
+    return 0;
+}
+
+int server_mmap() {}
+
+int client_mmap() {}
+
+
+int server_uds_dgram() {}
+
+int client_uds_dgram() {}
+
+int server_uds_stream() {}
+
+int client_uds_stream() {}
+
+
+int server_chat(char *port, int isPerformance, int isQuiet) {
+
+    //1 establish connection
+    int receiver_socket = socket(AF_INET, SOCK_STREAM, 0);
+    if (receiver_socket == ERROR) {
+        perror("[-]Socket error");
+        exit(1);
+    }
+    if (!isQuiet)printf("[+] Server chat socket created.\n");
+
+    struct sockaddr_in receiver_addr, client_addr;
+    memset(&receiver_addr, '\0', sizeof(receiver_addr));
+    receiver_addr.sin_family = AF_INET;
+    receiver_addr.sin_port = htons(atoi(port));
+    socklen_t addr_size = sizeof(client_addr);
+
+    if (setsockopt(receiver_socket, SOL_SOCKET, SO_REUSEADDR, &(int) {1}, sizeof(int)) < 0)
+        perror("[-] setsockopt(SO_REUSEADDR) failed");
+
+    if (bind(receiver_socket, (struct sockaddr *) &receiver_addr, sizeof(receiver_addr)) == ERROR) {
+        perror("[-]Bind error");
+        exit(1);
+    }
+    if (!isQuiet)printf("[+]Server chat Bind to: %s\n", port);
+
+    if (listen(receiver_socket, 1) == ERROR) {
+        perror("[-]Listen error");
+        exit(1);
+    }
+    if (!isQuiet)printf("Server chat Listening...\n");
+
+    int connection_socket = accept(receiver_socket, (struct sockaddr *) &client_addr, &addr_size);
+    if (!isQuiet)printf("[+] Client chat connected.\n");
+
+    char text[CHAT_BUFFER_SIZE];
+    bzero(text, CHAT_BUFFER_SIZE);
+    char buffer[CHAT_BUFFER_SIZE];
+    bzero(buffer, CHAT_BUFFER_SIZE);
+
+    if (isPerformance) {
+        recv(connection_socket, buffer, CHAT_BUFFER_SIZE, 0);
+        char *type = strtok(buffer, ",");
+        char *param = strtok(NULL, ",");
+
+        if (strcmp(type, "ipv4") == 0) {
+            if (strcmp(param, "udp") == 0) {
+                server_ipv4_UDP(connection_socket, atoi(port) + 1, isQuiet);
+            } else if (strcmp(param, "tcp") == 0) {
+                server_ipv4_TCP(connection_socket, atoi(port) + 1, isQuiet);
+            } else {
+                printf("usage: stnc -c IP PORT -p <type> <param>\n");
+                return ERROR;
+            }
+        } else if (strcmp(type, "ipv6") == 0) {
+            if (strcmp(param, "udp") == 0) {
+                server_ipv6_UDP(connection_socket, atoi(port) + 1, isQuiet);
+            } else if (strcmp(param, "tcp") == 0) {
+                server_ipv6_TCP(connection_socket, atoi(port) + 1, isQuiet);
+            } else {
+                printf("usage: stnc -c IP PORT -p <type> <param>\n");
+                return ERROR;
+            }
+        } else if (strcmp(type, "uds") == 0) {
+            if (strcmp(param, "dgram") == 0) {}
+            else if (strcmp(param, "stream") == 0) {}
+            else {
+                printf("usage: stnc -c IP PORT -p <type> <param>\n");
+                return ERROR;
+            }
+        } else if (strcmp(type, "mmap") == 0) {
+        } else if (strcmp(type, "pipe") == 0) {
+
+        } else {
+            printf("usage: stnc -c IP PORT -p <type> <param>\n");
+            return ERROR;
         }
 
-        struct sockaddr_in addr;
-        memset(&addr, '\0', sizeof(addr));
-        addr.sin_family = AF_INET;
-        addr.sin_port = htons(atoi(argv[3]));
-        addr.sin_addr.s_addr = inet_addr(argv[2]);
+    } else {//simple chat
 
-        if (connect(sock, (struct sockaddr *) &addr, sizeof(addr)) == ERROR) {
-            perror("[-]Connection error ");
-            exit(1);
+        struct pollfd pfsockin;
+        pfsockin.fd = connection_socket;
+        pfsockin.events = POLLIN;
+
+        struct pollfd pfstdin;
+        pfstdin.fd = STDIN_FILENO;
+        pfstdin.events = POLLIN;
+
+        while (TRUE) {
+            if (poll(&pfsockin, 1, TIME_OUT) == 1) {
+                recv(connection_socket, buffer, CHAT_BUFFER_SIZE, 0);
+                printf("client: %s", buffer);
+                if (strncmp(buffer, "exit", 4) == 0) {
+                    break;
+                }
+
+                bzero(buffer, CHAT_BUFFER_SIZE);
+            }
+            if (poll(&pfstdin, 1, TIME_OUT) == 1) {
+                fgets(text, CHAT_BUFFER_SIZE, stdin);
+                send(connection_socket, text, strlen(text), 0);
+                if (strncmp(text, "exit", 4) == 0) {
+                    break;
+                }
+                bzero(text, CHAT_BUFFER_SIZE);
+
+            }
         }
-        printf("[+]TCP socket connected.\n");
+    }
+    close(connection_socket);
+    return 0;
+}
 
+int client_chat(char *ip, char *port, int isPerformance, int isQuiet, char *type, char *param) {
+
+    int sock = socket(AF_INET, SOCK_STREAM, 0);
+    if (sock < 0) {
+        perror("[-]Socket error");
+        exit(1);
+    }
+    if (!isQuiet)printf("[+]Client chat socket created.\n");
+
+    if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &(int) {1}, sizeof(int)) < 0) {
+        perror("[-] setsockopt(SO_REUSEADDR) failed");
+    }
+
+    struct sockaddr_in addr;
+    memset(&addr, '\0', sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(atoi(port));
+    addr.sin_addr.s_addr = inet_addr(ip);
+
+    if (connect(sock, (struct sockaddr *) &addr, sizeof(addr)) == ERROR) {
+        perror("[-]Connection error ");
+        exit(1);
+    }
+    if (!isQuiet)printf("[+]Client chat socket connected.\n");
+
+
+    if (isPerformance) {
+
+        char task[20] = {0};
+        strcat(task, type);
+        strcat(task, ",");
+        strcat(task, param);
+        send(sock, task, strlen(task), 0);
+
+        if (strcmp(type, "ipv4") == 0) {
+            if (strcmp(param, "udp") == 0) {
+                client_ipv4_UDP(sock, ip, atoi(port) + 1, isQuiet);
+            } else if (strcmp(param, "tcp") == 0) {
+                client_ipv4_TCP(sock, ip, atoi(port) + 1, isQuiet);
+            } else {
+                printf("usage: stnc -c IP PORT -p <type> <param>\n");
+                return ERROR;
+            }
+        } else if (strcmp(type, "ipv6") == 0) {
+            if (strcmp(param, "udp") == 0) {
+                client_ipv6_UDP(sock, atoi(port) + 1, isQuiet);
+            } else if (strcmp(param, "tcp") == 0) {
+
+                client_ipv6_TCP(sock, atoi(port) + 1, isQuiet);
+            } else {
+                printf("usage: stnc -c IP PORT -p <type> <param>\n");
+                return ERROR;
+            }
+        } else if (strcmp(type, "uds") == 0) {
+            if (strcmp(param, "dgram") == 0) {}
+            else if (strcmp(param, "stream") == 0) {}
+            else {
+                printf("usage: stnc -c IP PORT -p <type> <param>\n");
+                return ERROR;
+            }
+        } else if (strcmp(type, "mmap") == 0) {
+        } else if (strcmp(type, "pipe") == 0) {
+            client_pipe(sock, isQuiet, param);
+        } else {
+            printf("usage: stnc -c IP PORT -p <type> <param>\n");
+            return ERROR;
+        }
+    } else {//simple chat
+        char *text[CHAT_BUFFER_SIZE];
+        char buffer[CHAT_BUFFER_SIZE];
 
         struct pollfd pfsockin;
         pfsockin.fd = sock;
@@ -64,164 +589,71 @@ int main(int argc, char *argv[]) {
         pfstdin.events = POLLIN;
 
 
-
-        char *text[BUFFER_SIZE];
-        int exit = 1;
-        char buffer[BUFFER_SIZE];
-        while (exit) {
+        while (TRUE) {
             if (poll(&pfsockin, 1, TIME_OUT) == 1) {
-                bzero(buffer, BUFFER_SIZE);
-                recv(sock, buffer, BUFFER_SIZE, 0);
+                bzero(buffer, CHAT_BUFFER_SIZE);
+                recv(sock, buffer, CHAT_BUFFER_SIZE, 0);
                 printf("server: %s", buffer);
                 if (strncmp(buffer, "exit", 4) == 0) {
                     break;
                 }
-                bzero(buffer, BUFFER_SIZE);
+                bzero(buffer, CHAT_BUFFER_SIZE);
             }
             if (poll(&pfstdin, 1, TIME_OUT) == 1) {
-                bzero(text, BUFFER_SIZE);
-                fgets(text, BUFFER_SIZE, stdin);
-                send(sock, text, BUFFER_SIZE, 0);
+                bzero(text, CHAT_BUFFER_SIZE);
+                fgets(text, CHAT_BUFFER_SIZE, stdin);
+                send(sock, text, CHAT_BUFFER_SIZE, 0);
                 if (strncmp(text, "exit", 4) == 0) {
                     break;
                 }
-                bzero(text, BUFFER_SIZE);
+                bzero(text, CHAT_BUFFER_SIZE);
             }
         }
-        close(sock);
-    } else if (strcmp("-s", argv[1]) == 0) {
-        int isPerform = (strcmp(argv[3], "-p") == 0 || strcmp(argv[4], "-p") == 0);
-        int isQuiet = (strcmp(argv[3], "-q") == 0 || strcmp(argv[4], "-q") == 0);
-        //1 establish connection
-        int receiver_socket = socket(AF_INET, SOCK_STREAM, 0);
-        if (receiver_socket == ERROR) {
-            perror("[-]Socket error");
-            exit(1);
-        }
-        printf("[+]TCP Receiver socket created.\n");
+    }
+    close(sock);
+    return 0;
+}
 
-        struct sockaddr_in receiver_addr, client_addr;
-        memset(&receiver_addr, '\0', sizeof(receiver_addr));
-        receiver_addr.sin_family = AF_INET;
-        receiver_addr.sin_port = htons(atoi(argv[2]));
-        socklen_t addr_size = sizeof(client_addr);
-
-        if (setsockopt(receiver_socket, SOL_SOCKET, SO_REUSEADDR, &(int) {1}, sizeof(int)) < 0)
-            perror("[-] setsockopt(SO_REUSEADDR) failed");
-
-        if (bind(receiver_socket, (struct sockaddr *) &receiver_addr, sizeof(receiver_addr)) == ERROR) {
-            perror("[-]Bind error");
-            exit(1);
-        }
-        printf("[+]Bind to: %s\n", argv[2]);
-
-        if (listen(receiver_socket, 1) == ERROR) {
-            perror("[-]Listen error");
-            exit(1);
-        }
-        printf("Listening...\n");
-
-        int connection_socket = accept(receiver_socket, (struct sockaddr *) &client_addr, &addr_size);
-        printf("[+]Sender connected.\n");
-
-        //
-        struct pollfd pfsockin;
-        pfsockin.fd = connection_socket;
-        pfsockin.events = POLLIN;
-
-        struct pollfd pfstdin;
-        pfstdin.fd = STDIN_FILENO;
-        pfstdin.events = POLLIN;
-        char text[BUFFER_SIZE];
-        bzero(text, BUFFER_SIZE);
-
-        int exit = 1;
-
-        char buffer[BUFFER_SIZE];
-        while (exit) {
-            if (poll(&pfsockin, 1, TIME_OUT) == 1) {
-                recv(connection_socket, buffer, BUFFER_SIZE, 0);
-                printf("client: %s", buffer);
-                if (strncmp(buffer, "exit", 4) == 0) {
-                    break;
-                }
-
-                bzero(buffer, BUFFER_SIZE);
-            }
-            if (poll(&pfstdin, 1, TIME_OUT) == 1) {
-                fgets(text, BUFFER_SIZE, stdin);
-                send(connection_socket, text, strlen(text), 0);
-                if (strncmp(text, "exit", 4) == 0) {
-                    break;
-                }
-                bzero(text, BUFFER_SIZE);
-
-            }
-        }
-        close(connection_socket);
-    } else {
-        printf("usage: ./stnc -c\\-s");
+int main(int argc, char *argv[]) {
+    if (argc < 2) {
+        printf("usage: ./stnc -c\\-s\n");
         return 1;
     }
+    int isPerformance = FALSE;
+    int isQuiet = FALSE;
+    int isClient = FALSE;
+    char *port;
+    char *ip;
+    char *type;
+    char *param;
+
+    for (int i = 1; i < 7; ++i) {
+        if (argv[i] == NULL) break;
+        if (strcmp(argv[i], "-c") == 0) {
+            isClient = TRUE;
+            ip = argv[i + 1];
+            port = argv[i + 2];
+            i += 2;
+        } else if (strcmp(argv[i], "-s") == 0) {
+            isClient = FALSE;
+            port = argv[i + 1];
+            i++;
+        } else if (strcmp(argv[i], "-p") == 0) {
+            isPerformance = TRUE;
+            if (isClient) {
+                type = argv[i + 1];
+                param = argv[i + 2];
+                i += 2;
+            }
+        } else if (strcmp(argv[i], "-q") == 0) isQuiet = TRUE;
+        else {
+            printf("usage: ./stnc -c\\-s\n");
+            return 1;
+        }
+    }
+    if (isClient) client_chat(ip, port, isPerformance, isQuiet, type, param);
+    else server_chat(port, isPerformance, isQuiet);
+
     return 0;
 
 }
-
-
-int func(int argc, char *argv[]) {
-    {
-        if (argc < 3 || argc > 6) {
-            printf("usage: stnc -c IP PORT -p <type> <param>\n");
-            return 1;
-        }
-        int isperform = FALSE;
-    }
-
-        int i = 0;
-        if (argc >= 5) {
-            if (strcmp(argv[4], "-P") == 0) {
-                isperform=TRUE;
-                i = 1;
-            } else {
-                printf("usage: stnc -c IP PORT -p <type> <param>\n");
-                return 1;
-            }
-            if (is_ip(argv[2])) {
-                if (is_port(argv[3])) {
-                    if (strcmp(argv[4 + i], "ipv4") == 0) {
-                        if (strcmp(argv[5 + i], "udp") == 0) {}
-                        if (strcmp(argv[5 + i], "tcp") == 0) {}
-                    }
-                    if (strcmp(argv[4 + i], "ipv6") == 0) {
-                        if (strcmp(argv[5 + i], "udp") == 0) {}
-                        if (strcmp(argv[5 + i], "tcp") == 0) {}
-                    }
-
-                    if (strcmp(argv[4 + i], "uds") == 0) {
-                        if (strcmp(argv[5 + i], "dgram") == 0) {}
-                        if (strcmp(argv[5 + i], "stream") == 0) {}
-                    }
-                }
-            }
-        }
-            FILE *fp1 = fopen(argv[4+i], "r");
-            if (fp1 == NULL) {
-            printf("target file not exist\n");
-            return 1;
-            }
-            if (strcmp(argv[5+i], "mmap") == 0) {}
-            if (strcmp(argv[5+i], "pipe") == 0) {}
-
-
-
-
-}
-        if (argc <= 4) {
-            if (strcmp(argv[2], "-P") == 0) {
-                isperform = TRUE;
-                i = 1;
-            } else {
-                printf("usage: stnc -c IP PORT -p <type> <param>\n");
-                return 1;
-            }
-        }
