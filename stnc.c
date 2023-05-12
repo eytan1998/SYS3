@@ -27,7 +27,7 @@
 
 #define CHAT_BUFFER_SIZE 1024
 #define PIPE_NAME "/tmp/my_pipe"
-#define UDS_FILE_NAME "/tmp/UDS-FILE"
+#define UDS_FILE_NAME "UDS-FILE"
 #define UNIX_PATH_MAX 108
 struct sockaddr_un {
     unsigned short int sun_family; /* AF_UNIX */
@@ -35,23 +35,32 @@ struct sockaddr_un {
 };
 #define DATA_SIZE 104857600
 
+unsigned int checksum(const char *data, size_t len)
+{
+    unsigned int sum = 0;
+    size_t i;
+    for (i = 0; i < len; ++i)
+        sum += data[i];
+    return sum;
+}
+
 char *generateData() {
     char *data = malloc(DATA_SIZE);
     for (int i = 0; i < DATA_SIZE; ++i) {
-        data[i] = '%';
+        data[i] = '$';
     }
     if (data == NULL) {
         perror("malloc data");
         return NULL;
     }
-    srand(time(NULL));
+    printf("checksum: %u\n", checksum(data,DATA_SIZE));
     return data;
 }
 
 int server_ipv4_TCP(int chat_socket, int port, int isQuiet) {
     int receiver_socket = socket(AF_INET, SOCK_STREAM, 0);
     if (receiver_socket == ERROR) {
-        perror("[-]Socket error");
+        perror("[-] ipv4 tcp Socket error");
         exit(1);
     }
     if (!isQuiet)printf("[+]server ipv4 socket created.\n");
@@ -535,34 +544,62 @@ int client_ipv6_UDP(int chat_socket, int port, int isQuiet) {
 }
 
 int server_uds_dgram(int chat_socket, int isQuiet) {
-    fd_set master;    // master file descriptor list
-    fd_set read_fds;  // temp file descriptor list for select()
-    int fdmax;        // maximum file descriptor number
-    struct sockaddr_un local;
+    /*********************************/
+    /*          socket()             */
+    /*********************************/
+    struct sockaddr_un addr;
 
-    int listener;     // listening socket descriptor
-    int newfd;        // newly accept()ed socket descriptor
-    struct sockaddr_storage remoteaddr; // client address
-    socklen_t addrlen;
-
-    char buf[256];    // buffer for client data
-    int nbytes;
-
-    char remoteIP[INET6_ADDRSTRLEN];
-    listener = socket(AF_UNIX, SOCK_STREAM,0);
-    local.sun_family = AF_UNIX;
-    strcpy(local.sun_path, "mysocket");
-    bind(listener, (struct sockaddr *) &local, sizeof(local));
-    // listen
-    if (listen(listener, 10) == -1) {
-        perror("listen");
-        exit(3);
+    int receiver_socket = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (receiver_socket == -1) {
+        perror("[-] uds dgram socket");
+        return ERROR;
     }
 
-    //send to client to try connect after create socket
+//    // Make sure the address we're planning to use isn't too long.
+//    if (strlen(UDS_FILE_NAME) > sizeof(addr.sun_path) - 1) {
+//        perror("[-] uds dgram Server socket path too long");
+//        return ERROR;
+//    }
+
+    // Delete any file that already exists at the address. Make sure the deletion
+    // succeeds. If the error is just that the file/directory doesn't exist, it's fine.
+    if (remove(UDS_FILE_NAME) == -1 && errno != ENOENT) {
+        perror("[-] uds dgram remove file");
+        return ERROR;
+    }
+
+    // Zero out the address, and set family and path.
+    memset(&addr, 0, sizeof(struct sockaddr_un));
+    addr.sun_family = AF_UNIX;
+    strncpy(addr.sun_path, UDS_FILE_NAME, sizeof(addr.sun_path) - 1);
+
+    /*********************************/
+    /*          bind()             */
+    /*********************************/
+    if (bind(receiver_socket, (struct sockaddr *) &addr, sizeof(struct sockaddr_un)) == -1) {
+        perror("uds dgram bind");
+    }
+
+    /*********************************/
+    /*          listen()             */
+    /*********************************/
+    if (listen(receiver_socket, 1) == -1) {
+        perror("uds dgram listen");
+    }
+
+
+    //send to client to try to connect after create socket
     send(chat_socket, "ready", strlen("ready"), 0);
 
+    /*********************************/
+    /*          accept()             */
+    /*********************************/
+    int connection_socket = accept(receiver_socket, NULL, NULL);
 
+
+    /*********************************/
+    /*          recv size             */
+    /*********************************/
     //get file size from sender
     char buffer[CHAT_BUFFER_SIZE];
     bzero(buffer, CHAT_BUFFER_SIZE);
@@ -570,17 +607,20 @@ int server_uds_dgram(int chat_socket, int isQuiet) {
     int receiveSize = (int) *(int *) buffer;
     if (!isQuiet)printf("Received file size is: %d bytes, (~%d MB)\n", receiveSize, receiveSize / 1000000);
 
+    /*********************************/
+    /*          recv data            */
+    /*********************************/
     //to measure time
     long time;
     struct timeval start, end;
 
     char data_buffer[DATA_BUFFER_SIZE];
     gettimeofday(&start, NULL);
-    printf("receiving data...\n");
+    if (!isQuiet)printf("receiving data...\n");
     while (1) {
         //zero the buffer
         bzero(data_buffer, DATA_BUFFER_SIZE);
-        int bytesReceived = (int) recv(listener, data_buffer, DATA_BUFFER_SIZE, 0);
+        int bytesReceived = (int) recv(connection_socket, data_buffer, DATA_BUFFER_SIZE, 0);
         //to track how much byte to receive
         receiveSize -= bytesReceived;
         if (bytesReceived == 0 || receiveSize <= 0) break;
@@ -591,34 +631,62 @@ int server_uds_dgram(int chat_socket, int isQuiet) {
         }
 
     }
+    /*********************************/
+    /*     calc and print time       */
+    /*********************************/
     gettimeofday(&end, NULL);
     time = (end.tv_usec - start.tv_usec) / 1000;
-    printf("ipv4_tcp,%ld\n", time);
+    printf("uds_dgram,%ld\n", time);
     return 0;
 
 
 }
 
 int client_uds_dgram(int chat_socket, int isQuiet) {
-    int sockfd, numbytes;
-    char buf[100];
-    struct addrinfo hints, *servinfo, *p;
-    int rv;
-    char s[INET6_ADDRSTRLEN];
-    struct sockaddr_un remote;
+    /*********************************/
+    /*          socket()             */
+    /*********************************/
+    struct sockaddr_un addr;
+    ssize_t numRead;
 
-    sockfd=socket(AF_UNIX, SOCK_STREAM, 0);
-    remote.sun_family=AF_UNIX;
-    strcpy(remote.sun_path, "mysocket");
-    connect(sockfd,(struct sockaddr *) &remote, sizeof (remote));
+    // Create a new client socket with domain: AF_UNIX, type: SOCK_STREAM, protocol: 0
+    int sock = socket(AF_UNIX, SOCK_STREAM, 0);
+    // Make sure socket's file descriptor is legit.
+    if (sock == -1) {
+        perror("socket");
+    }
 
+    // Construct server address, and make the connection.
+    memset(&addr, 0, sizeof(struct sockaddr_un));
+    addr.sun_family = AF_UNIX;
+    strncpy(addr.sun_path, UDS_FILE_NAME, sizeof(addr.sun_path) - 1);
 
+    char buffer[CHAT_BUFFER_SIZE];
+    bzero(buffer, CHAT_BUFFER_SIZE);
+    recv(chat_socket, buffer, CHAT_BUFFER_SIZE, 0);
+    if (strcmp(buffer, "ready") != 0) return ERROR;
 
+    /*********************************/
+    /*          connect()             */
+    /*********************************/
+    if (connect(sock, (struct sockaddr *) &addr,
+                sizeof(struct sockaddr_un)) == -1) {
+        perror("connect");
+    }
+
+    /*********************************/
+    /*          send size             */
+    /*********************************/
     char *data = generateData();
     //sending file size
     unsigned long un = strlen(data);
     printf("Sending file size is: %lu bytes, (~%lu MB)\n", strlen(data), strlen(data) / 1000000);
     send(chat_socket, &un, sizeof(unsigned long), 0);
+
+    /*********************************/
+    /*          send data             */
+    /*********************************/
+    send(sock, data, strlen(data), 0);
 
     return 0;
 }
