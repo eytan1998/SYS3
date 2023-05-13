@@ -20,13 +20,12 @@
 #define FALSE 0
 #define TRUE 1
 
-
-#define FILEMODE (S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH)
 #define TIME_OUT 100
-#define DATA_BUFFER_SIZE 60000
+#define DATA_BUFFER_SIZE 8192
 #define UDS_FILE_NAME "UDS-FILE"
 #define CHAT_BUFFER_SIZE 1024 //Maximum length of the information sent in chat for the 1st time
-#define DATA_SIZE 104857600 //Length of all information sent to the server
+
+#define DATA_SIZE 104857600 // 100MB
 
 
 unsigned int checksum(const char *data, size_t len) {
@@ -46,7 +45,7 @@ char *generateData(int isQuiet) {
         perror("malloc data");
         return NULL;
     }
-    if(!isQuiet)printf("checksum: %u\n", checksum(data, DATA_SIZE));
+    if (!isQuiet)printf("checksum: %u\n", checksum(data, DATA_SIZE));
     return data;
 }
 
@@ -96,7 +95,7 @@ int server_ipv4_TCP(int chat_socket, int port, int isQuiet) {
     /*          accept()             */
     /*********************************/
     int connection_socket = accept(receiver_socket, (struct sockaddr *) &client_addr, &addr_size);
-    if(connection_socket < 0){
+    if (connection_socket < 0) {
         perror("[-] server ipv4 tcp accept");
         return ERROR;
     }
@@ -142,7 +141,7 @@ int server_ipv4_TCP(int chat_socket, int port, int isQuiet) {
     /*********************************/
     /*     calc and print time       */
     /*********************************/
-        time = (end.tv_sec - start.tv_sec) * 1000;
+    time = (end.tv_sec - start.tv_sec) * 1000;
     time += (end.tv_usec - start.tv_usec) / 1000;
     printf("ipv4_tcp,%ld\n", time);
     return 0;
@@ -193,14 +192,15 @@ int client_ipv4_TCP(int chat_socket, char *ip, int port, int isQuiet) {
     /*********************************/
     char *data = generateData(isQuiet);
     unsigned long un = strlen(data);
-    printf("Sending file size is: %lu bytes, (~%lu MB)\n", strlen(data), strlen(data) / 1000000);
+    printf("Sending file size : %lu bytes, (~%lu MB)\n", strlen(data), strlen(data) / 1000000);
     send(chat_socket, &un, sizeof(unsigned long), 0);
 
     /*********************************/
     /*          send data            */
     /*********************************/
-        send(sock, data, strlen(data), 0);
+    send(sock, data, strlen(data), 0);
 
+    free(data);
     return 0;
 }
 
@@ -257,7 +257,7 @@ int server_ipv6_TCP(int chat_socket, int port, int isQuiet) {
     /*          accept()             */
     /*********************************/
     int connection_socket = accept(receiver_socket, (struct sockaddr *) &client_addr, &addr_size);
-    if(connection_socket < 0){
+    if (connection_socket < 0) {
         perror("[-] client ipv6 accept.");
         return ERROR;
     }
@@ -301,7 +301,7 @@ int server_ipv6_TCP(int chat_socket, int port, int isQuiet) {
     /*********************************/
     /*     calc and print time       */
     /*********************************/
-        time = (end.tv_sec - start.tv_sec) * 1000;
+    time = (end.tv_sec - start.tv_sec) * 1000;
     time += (end.tv_usec - start.tv_usec) / 1000;
     printf("ipv6_tcp,%ld\n", time);
     return 0;
@@ -355,13 +355,15 @@ int client_ipv6_TCP(int chat_socket, int port, int isQuiet) {
     /*********************************/
     //sending file size
     unsigned long un = strlen(data);
-    if (!isQuiet)printf("Sending file size is: %lu bytes, (~%lu MB)\n", strlen(data), strlen(data) / 1000000);
+    if (!isQuiet)printf("Sending file size : %lu bytes, (~%lu MB)\n", strlen(data), strlen(data) / 1000000);
     send(chat_socket, &un, sizeof(unsigned long), 0);
 
     /*********************************/
     /*          send data            */
     /*********************************/
     send(sock, data, strlen(data), 0);
+    free(data);
+
     return 0;
 }
 
@@ -452,7 +454,7 @@ int server_ipv4_UDP(int chat_socket, int port, int isQuiet) {
     /*     calc and print time       */
     /*********************************/
 
-        time = (end.tv_sec - start.tv_sec) * 1000;
+    time = (end.tv_sec - start.tv_sec) * 1000;
     time += (end.tv_usec - start.tv_usec) / 1000;
     printf("ipv4_udp,%ld\n", time);
     return 0;
@@ -493,7 +495,7 @@ int client_ipv4_UDP(int chat_socket, char *ip, int port, int isQuiet) {
     char *data = generateData(isQuiet);
     //sending file size
     unsigned long data_size = strlen(data);
-    if (!isQuiet)printf("Sending file size is: %lu bytes, (~%lu MB)\n", strlen(data), strlen(data) / 1000000);
+    if (!isQuiet)printf("Sending file size : %lu bytes, (~%lu MB)\n", strlen(data), strlen(data) / 1000000);
     send(chat_socket, &data_size, sizeof(unsigned long), 0);
 
     /*********************************/
@@ -515,6 +517,7 @@ int client_ipv4_UDP(int chat_socket, char *ip, int port, int isQuiet) {
         data_index += data_send;
         data_size -= data_send;
     }
+    free(data);
 
     return 0;
 }
@@ -530,7 +533,7 @@ int server_ipv6_UDP(int chat_socket, int port, int isQuiet) {
         perror("[-]server ipv6 UDP Socket error");
         return ERROR;
     }
-    if (!isQuiet)printf("[+]server ipv6 UDP socket created.\n");
+    if (!isQuiet)printf("[+] server ipv6 UDP socket created.\n");
 
     struct sockaddr_in6 receiver_addr, client_addr;
     memset(&receiver_addr, '\0', sizeof(receiver_addr));
@@ -550,7 +553,9 @@ int server_ipv6_UDP(int chat_socket, int port, int isQuiet) {
     }
     /*********************************/
     /*          bind()             */
-    /*********************************/    if (bind(receiver_socket, (struct sockaddr *) &receiver_addr, sizeof(receiver_addr)) < 0) {
+    /*********************************/
+    if (
+            bind(receiver_socket, (struct sockaddr *) &receiver_addr, sizeof(receiver_addr)) < 0) {
         perror("[-]server ipv6 udp bind");
         return ERROR;
     }
@@ -609,7 +614,7 @@ int server_ipv6_UDP(int chat_socket, int port, int isQuiet) {
     /*********************************/
     /*     calc and print time       */
     /*********************************/
-        time = (end.tv_sec - start.tv_sec) * 1000;
+    time = (end.tv_sec - start.tv_sec) * 1000;
     time += (end.tv_usec - start.tv_usec) / 1000;
     printf("ipv6_udp,%ld\n", time);
     return 0;
@@ -655,7 +660,7 @@ int client_ipv6_UDP(int chat_socket, int port, int isQuiet) {
     char *data = generateData(isQuiet);
     //sending file size
     unsigned long data_size = strlen(data);
-    if (!isQuiet) printf("Sending file size is: %lu bytes, (~%lu MB)\n", strlen(data), strlen(data) / 1000000);
+    if (!isQuiet) printf("Sending file size : %lu bytes, (~%lu MB)\n", strlen(data), strlen(data) / 1000000);
     send(chat_socket, &data_size, sizeof(unsigned long), 0);
 
     /*********************************/
@@ -678,6 +683,7 @@ int client_ipv6_UDP(int chat_socket, int port, int isQuiet) {
         data_size -= data_sended;
     }
 
+    free(data);
 
     return 0;
 }
@@ -779,9 +785,15 @@ int server_uds_dgram(int chat_socket, int isQuiet) {
     /*********************************/
     /*     calc and print time       */
     /*********************************/
-        time = (end.tv_sec - start.tv_sec) * 1000;
+    time = (end.tv_sec - start.tv_sec) * 1000;
     time += (end.tv_usec - start.tv_usec) / 1000;
     printf("uds_dgram,%ld\n", time);
+
+    //remove the file that created
+    if (remove(UDS_FILE_NAME) < 0) {
+        if (!isQuiet) perror("[-] Failed delete file at the end.");
+    }
+
     return 0;
 
 
@@ -829,7 +841,7 @@ int client_uds_dgram(int chat_socket, int isQuiet) {
     char *data = generateData(isQuiet);
     //sending file size
     unsigned long data_size = strlen(data);
-    if (!isQuiet)printf("Sending file size is: %lu bytes, (~%lu MB)\n", strlen(data), strlen(data) / 1000000);
+    if (!isQuiet)printf("Sending file size : %lu bytes, (~%lu MB)\n", strlen(data), strlen(data) / 1000000);
     send(chat_socket, &data_size, sizeof(unsigned long), 0);
 
     /*********************************/
@@ -851,6 +863,8 @@ int client_uds_dgram(int chat_socket, int isQuiet) {
         data_index += data_send;
         data_size -= data_send;
     }
+    free(data);
+
     return 0;
 }
 
@@ -863,7 +877,7 @@ int server_uds_stream(int chat_socket, int isQuiet) {
     struct sockaddr_un addr;
 
     int receiver_socket = socket(AF_UNIX, SOCK_STREAM, 0);
-    if (receiver_socket <0) {
+    if (receiver_socket < 0) {
         perror("[-] server uds stream socket");
         return ERROR;
     }
@@ -890,7 +904,7 @@ int server_uds_stream(int chat_socket, int isQuiet) {
     /*********************************/
     /*          bind()             */
     /*********************************/
-    if (bind(receiver_socket, (struct sockaddr *) &addr, sizeof(struct sockaddr_un))<0) {
+    if (bind(receiver_socket, (struct sockaddr *) &addr, sizeof(struct sockaddr_un)) < 0) {
         perror("[-] server uds stream bind");
     }
     if (!isQuiet)printf("[+] server uds stream bind.\n");
@@ -898,7 +912,7 @@ int server_uds_stream(int chat_socket, int isQuiet) {
     /*********************************/
     /*          listen()             */
     /*********************************/
-    if (listen(receiver_socket, 1)<0) {
+    if (listen(receiver_socket, 1) < 0) {
         perror("[-] server uds stream listen");
     }
 
@@ -950,9 +964,15 @@ int server_uds_stream(int chat_socket, int isQuiet) {
     /*********************************/
     /*     calc and print time       */
     /*********************************/
-        time = (end.tv_sec - start.tv_sec) * 1000;
+    time = (end.tv_sec - start.tv_sec) * 1000;
     time += (end.tv_usec - start.tv_usec) / 1000;
     printf("uds_stream,%ld\n", time);
+
+
+    //remove the file that created
+    if (remove(UDS_FILE_NAME) < 0) {
+        if (!isQuiet)perror("[-] Failed delete file at the end.");
+    }
     return 0;
 
 
@@ -970,7 +990,7 @@ int client_uds_stream(int chat_socket, int isQuiet) {
     // Create a new client socket with domain: AF_UNIX, type: SOCK_STREAM, protocol: 0
     int sock = socket(AF_UNIX, SOCK_STREAM, 0);
     // Make sure socket's file descriptor is legit.
-    if (sock <0) {
+    if (sock < 0) {
         perror("[-] client uds stream socket");
     }
     if (!isQuiet)printf("[+] client uds stream socket.\n");
@@ -1000,13 +1020,15 @@ int client_uds_stream(int chat_socket, int isQuiet) {
     char *data = generateData(isQuiet);
     //sending file size
     unsigned long un = strlen(data);
-    if (!isQuiet) printf("Sending file size is: %lu bytes, (~%lu MB)\n", strlen(data), strlen(data) / 1000000);
+    if (!isQuiet) printf("Sending file size : %lu bytes, (~%lu MB)\n", strlen(data), strlen(data) / 1000000);
     send(chat_socket, &un, sizeof(unsigned long), 0);
 
     /*********************************/
     /*          send data             */
     /*********************************/
     send(sock, data, strlen(data), 0);
+    free(data);
+
     return 0;
 }
 
@@ -1016,20 +1038,23 @@ int server_pipe(int chat_socket, int isQuiet, char *param) {
     int fd;
     ssize_t num_read, num_written;
     off_t total_read = 0;
-    printf("server chat\n");
 
 
-
+    /*********************************/
+    /*         recv size             */
+    /*********************************/
     //get file size from sender
+
+
     char buffer[CHAT_BUFFER_SIZE];
     bzero(buffer, CHAT_BUFFER_SIZE);
     recv(chat_socket, buffer, CHAT_BUFFER_SIZE, 0);
-    printf("%s\n", buffer);
     int receiveSize = (int) *(int *) buffer;
-//    if (!isQuiet)printf("Received file size is: %d bytes, (~%d MB)\n", receiveSize, receiveSize / 1000000);
-
+    if (!isQuiet)printf("Received file size is: %d bytes, (~%d MB)\n", receiveSize, receiveSize / 1000000);
+    /*********************************/
+    /*         open pipe             */
+    /*********************************/
     // Open the named pipe for reading
-//    while (access(param, F_OK) == -1) {}
     fd = open(param, O_CREAT | O_RDONLY);
     if (fd == -1) {
         perror("open");
@@ -1043,33 +1068,41 @@ int server_pipe(int chat_socket, int isQuiet, char *param) {
     struct timeval start, end;
 
     gettimeofday(&start, NULL);
-    printf("receiving data...\n");
+    if (!isQuiet)printf("receiving data...\n");
     gettimeofday(&end, NULL);
 
+    /*********************************/
+    /*         recv data             */
+    /*********************************/
     while ((num_read = read(fd, data_buffer, DATA_BUFFER_SIZE)) > 0) {
         total_read += num_read;
     }
     gettimeofday(&end, NULL);
-        time = (end.tv_sec - start.tv_sec) * 1000;
+    time = (end.tv_sec - start.tv_sec) * 1000;
     time += (end.tv_usec - start.tv_usec) / 1000;
-    printf("ipv4_tcp,%ld\n", time);
-    // Read data from the named pipe
-    printf("Received %ld bytes from pipe\n", total_read);
+    printf("pipe,%ld\n", time);
+
+    if (!isQuiet)printf("Received %ld bytes from pipe\n", total_read);
     close(fd);
+
+    //remove the file that created
+    if (remove(param) < 0) {
+        if (!isQuiet)perror("[-] Failed delete file at the end.");
+    }
     return 0;
 }
 
 int client_pipe(int chat_socket, int isQuiet, char *param) {
     if (!isQuiet)printf("------------client pipe------------\n");
 
-    //    send ready!
-    send(chat_socket, "43435", strlen("ready"), 0);
 
     int fd;
     char mesg[CHAT_BUFFER_SIZE];
     char buffer[CHAT_BUFFER_SIZE];
     if (!isQuiet)printf("[+]client pipe.\n");
 
+
+    //Checks if a file exists and if not creates such a file
     ssize_t num_written;
     unsigned long num_read;
     if (access(param, F_OK) == -1) {
@@ -1078,17 +1111,23 @@ int client_pipe(int chat_socket, int isQuiet, char *param) {
             return ERROR;
         }
     }
+    if (!isQuiet)printf("[+] pipe file created.\n");
 
-
-    if (!isQuiet)printf("[+]pipe file created.\n");
-
+    /*********************************/
+    /*         send size             */
+    /*********************************/
 
     char *data = generateData(isQuiet);
     //sending file size
     unsigned long data_size = strlen(data);
-    printf("Sending file size is: %lu bytes, (~%lu MB)\n", strlen(data), strlen(data) / 1000000);
+    if (isQuiet)printf("Sending file size : %lu bytes, (~%lu MB)\n", strlen(data), strlen(data) / 1000000);
     send(chat_socket, &data_size, sizeof(unsigned long), 0);
 
+
+
+    /*********************************/
+    /*         open pipe file        */
+    /*********************************/
     // Open the file to be sent
     fd = open(param, O_CREAT | O_WRONLY);
     if (fd == -1) {
@@ -1097,148 +1136,155 @@ int client_pipe(int chat_socket, int isQuiet, char *param) {
     }
     if (!isQuiet)printf("[+]pipe file open.\n");
 
-
+    /*********************************/
+    /*         write to pipe         */
+    /*********************************/
     num_written = write(fd, data, data_size);
 
-    printf("Sent %ld bytes to pipe\n", num_written);
+    if (!isQuiet)printf("Sent %ld bytes to pipe\n", num_written);
 
     close(fd);
+    free(data);
 
     return 0;
 }
 
 int server_mmap(int chat_socket, int isQuiet, char *param) {
-    if (!isQuiet)printf("------------mmap pipe------------\n");
+    if (!isQuiet)printf("------------server mmap------------\n");
 
     int fd;
-    char *mem;
+    char *addr;
     char buffer[CHAT_BUFFER_SIZE];
-    sleep(1);
-    // Open the file for reading
-    fd = open(param, O_RDONLY, FILEMODE);
+
+    recv(chat_socket, buffer, CHAT_BUFFER_SIZE, 0);
+    if (strcmp(buffer, "ready") != 0) return ERROR;
+
+    // Open the shared memory object
+    fd = shm_open(param, O_RDWR, S_IRUSR | S_IWUSR);
     if (fd == -1) {
-        perror("open");
+        perror("shm_open");
         return ERROR;
     }
 
-//    send(chat_socket, "ready", strlen("ready"), 0);
-//    if (!isQuiet)printf("[+]ready\n");
 
-
-
-    //get file size from sender
-
-    bzero(buffer, CHAT_BUFFER_SIZE);
-    recv(chat_socket, buffer, CHAT_BUFFER_SIZE, 0);
-    if (!isQuiet)printf("[+]mmap mem\n");
-    printf("%s------\n",buffer);
-    int receiveSize = (int) *(int *) buffer;
-    bzero(buffer, CHAT_BUFFER_SIZE);
-    if (!isQuiet)printf("Received file size is: %d bytes, (~%d MB)\n", receiveSize, receiveSize / 1000000);
-    // Map the file into memory
-
-    mem = mmap(NULL, DATA_SIZE, PROT_READ, MAP_SHARED, fd, 0);
-    if (mem == MAP_FAILED) {
+    // Map the shared memory object into the address space of this process
+    addr = mmap(NULL, DATA_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    if (addr == MAP_FAILED) {
         perror("mmap");
         return ERROR;
     }
-    char *data;
+
+    // Wait for a client to connect and read from the shared memory
+    if (!isQuiet)printf("Waiting for a client to connect...\n");
+    /*********************************/
+    /*          recv size             */
+    /*********************************/
+    //get file size from sender
+    bzero(buffer, CHAT_BUFFER_SIZE);
+    recv(chat_socket, buffer, CHAT_BUFFER_SIZE, 0);
+    int receiveSize = (int) *(int *) buffer;
+    if (!isQuiet)printf("Received file size is: %d bytes, (~%d MB)\n", receiveSize, receiveSize / 1000000);
+
+    /*********************************/
+    /*          recv data            */
+    /*********************************/
+    //to measure time
     long time;
     struct timeval start, end;
-
-
-    char data_buffer[DATA_BUFFER_SIZE];
     gettimeofday(&start, NULL);
-    if (!isQuiet)printf("receiving data...\n");
 
-    // Read data from the shared memory
-//    fgets(mem, DATA_SIZE, data);
-    int total_read=DATA_SIZE;
-//    memcpy(data,  mem, DATA_SIZE);
-    if((total_read = fread(data, sizeof(char), DATA_SIZE, mem)) <= 0){
-        perror("fread faile");
-        return ERROR;
-    }
+    // Read from the shared memory
+//    printf("Message received from client: %s\n", addr);
 
+    char *data = malloc(DATA_SIZE);
+    bzero(data, DATA_SIZE);
+    memcpy(data, addr, DATA_SIZE);
 
     gettimeofday(&end, NULL);
-        time = (end.tv_sec - start.tv_sec) * 1000;
+    /*********************************/
+    /*     calc and print time       */
+    /*********************************/
+    time = (end.tv_sec - start.tv_sec) * 1000;
     time += (end.tv_usec - start.tv_usec) / 1000;
-    printf("ipv4_tcp,%ld\n", time);
-    if (!isQuiet)printf("Received %ld bytes from pipe\n", total_read);
-    send(chat_socket, "finish", strlen("finish"), 0);
+    printf("mmap,%ld\n", time);
+    if (!isQuiet)printf("Received byte: %ld\n", strlen(data));
 
-
-    // Unmap the memory and close the fi
-    if (munmap(mem, DATA_SIZE) == -1) {
+    // Unmap the shared memory and close the shared memory object
+    if (munmap(addr, DATA_BUFFER_SIZE) == -1) {
         perror("munmap");
         return ERROR;
     }
-
     if (close(fd) == -1) {
         perror("close");
         return ERROR;
     }
 
+    // Unlink the shared memory object
+    if (shm_unlink(param) == -1) {
+        perror("shm_unlink");
+        return ERROR;
+    }
+
+    //free data malloc
+    free(data);
+
     return 0;
+
+
 }
 
 int client_mmap(int chat_socket, int isQuiet, char *param) {
     if (!isQuiet)printf("------------client mmap------------\n");
 
     int fd;
-    char *mem;
+    char *addr;
 
-    // Open the file for writing and truncate it to the desired size
-    fd = open(param, O_RDWR | O_CREAT | O_TRUNC, FILEMODE);
+    // Open the shared memory object
+    fd = shm_open(param, O_RDWR | O_CREAT, S_IRUSR | S_IWUSR);
     if (fd == -1) {
-        perror("open");
+        perror("shm_open");
         return ERROR;
     }
-    if (!isQuiet)printf("[+]file open\n");
-
+    // Resize the shared memory object to the desired size
     if (ftruncate(fd, DATA_SIZE) == -1) {
         perror("ftruncate");
         return ERROR;
     }
 
-    // Map the file into memory
-    mem = mmap(NULL, DATA_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-    if (mem == MAP_FAILED) {
+    // Map the shared memory object into the address space of this process
+    addr = mmap(NULL, DATA_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    if (addr == MAP_FAILED) {
         perror("mmap");
         return ERROR;
     }
-    if (!isQuiet)printf("[+]mmap mem\n");
-    char *data = generateData(isQuiet);
-    //sending file size
 
-    unsigned long data_size = strlen(data);
-    printf("Sending file size is: %lu bytes, (~%lu MB)\n", strlen(data), strlen(data) / 1000000);
-    send(chat_socket, &data_size, sizeof(unsigned long), 0);
-    // Write data to the shared memory
-    strncpy(mem, data, data_size);
-
-    char buffer[CHAT_BUFFER_SIZE];
-    bzero(buffer, CHAT_BUFFER_SIZE);
-
-    // Wait for the other process to read the data
-    recv(chat_socket, buffer, CHAT_BUFFER_SIZE, 0);
-    if (strcmp(buffer, "finish") != 0) return ERROR;
-    if (!isQuiet)printf("[+]recv\n");
-    sleep(1);
-    // Unmap the memory and close the file
-//    if (munmap(mem, DATA_SIZE) == -1) {
-//        perror("munmap");
-//        return ERROR;    }
+    //send to client to try to connect after create socket
+    send(chat_socket, "ready", strlen("ready"), 0);
     if (close(fd) == -1) {
         perror("close");
         return ERROR;
     }
+    // Write data to the shared memory
+    char *data = generateData(isQuiet);
+
+    strncpy(addr, data, DATA_SIZE);
+
+    // Wait for the server to read from the shared memory
+    printf("Waiting for the server to receive the message...\n");
+
+    /*********************************/
+    /*          send size             */
+    /*********************************/
+    unsigned long un = strlen(data);
+    printf("Sending file size : %lu bytes, (~%lu MB)\n", strlen(data), strlen(data) / 1000000);
+    send(chat_socket, &un, sizeof(unsigned long), 0);
+
+
     return 0;
 }
 
 int server_chat(char *port, int isPerformance, int isQuiet) {
-    //if error chaange this value
+    //if error change this value
     int returned_value = !ERROR;
     /*********************************/
     /*          socket()             */
@@ -1331,16 +1377,18 @@ int server_chat(char *port, int isPerformance, int isQuiet) {
                 return ERROR;
             }
         } else if (strcmp(type, "mmap") == 0) {
-            returned_value = server_mmap(receiver_socket, isQuiet, param);
+            returned_value = server_mmap(connection_socket, isQuiet, param);
 
         } else if (strcmp(type, "pipe") == 0) {
-            returned_value = server_pipe(receiver_socket, isQuiet, param);
+
+            returned_value = server_pipe(connection_socket, isQuiet, param);
         } else {
             printf("usage: stnc -c IP PORT -p <type> <param>\n");
             return ERROR;
         }
 
     } else {//simple chat
+        if (!isQuiet)printf("------------server chat------------\n");
 
         struct pollfd pfsockin;
         pfsockin.fd = connection_socket;
@@ -1376,7 +1424,8 @@ int server_chat(char *port, int isPerformance, int isQuiet) {
 }
 
 int client_chat(char *ip, char *port, int isPerformance, int isQuiet, char *type, char *param) {
-    //if error chaange this value
+    //if error change this value
+
     int returned_value = !ERROR;
 
     /*********************************/
@@ -1410,14 +1459,12 @@ int client_chat(char *ip, char *port, int isPerformance, int isQuiet, char *type
 
 
     if (isPerformance) {
-        if (!isQuiet)printf("[+]isPerformance\n");
 
         char task[20] = {0};
         strcat(task, type);
         strcat(task, ",");
         strcat(task, param);
         send(sock, task, strlen(task), 0);
-        if (!isQuiet)printf("[+]send\n");
 
         if (strcmp(type, "ipv4") == 0) {
             if (strcmp(param, "udp") == 0) {
@@ -1455,6 +1502,8 @@ int client_chat(char *ip, char *port, int isPerformance, int isQuiet, char *type
             return ERROR;
         }
     } else {//simple chat
+        if (!isQuiet)printf("------------client chat------------\n");
+
         char text[CHAT_BUFFER_SIZE];
         char buffer[CHAT_BUFFER_SIZE];
 
@@ -1502,15 +1551,18 @@ int main(int argc, char *argv[]) {
     int isClient = FALSE;
     char *port;
     char *ip;
-    char *type;
-    char *param;
+    char *type = "null";
+    char *param = "null";
 
     for (int i = 1; i < 10; ++i) {
+
         if (argv[i] == NULL) break;
         if (strcmp(argv[i], "-c") == 0) {
+
             isClient = TRUE;
             ip = argv[i + 1];
             port = argv[i + 2];
+
             i += 2;
         } else if (strcmp(argv[i], "-s") == 0) {
             isClient = FALSE;
@@ -1523,7 +1575,7 @@ int main(int argc, char *argv[]) {
                 param = argv[i + 2];
                 i += 2;
             }
-        } else if (strcmp(argv[i], "-q") == 0) isQuiet = TRUE;
+        }else if (strcmp(argv[i], "-q") == 0) isQuiet = TRUE;
         else if (strcmp(argv[i], "pipe") == 0) {
             type = argv[i];
             param = argv[i + 1];
@@ -1539,11 +1591,16 @@ int main(int argc, char *argv[]) {
     }
 
     if (isClient) {
-        printf("%s---%s---%d---%d---%s---%s\n",ip, port, isPerformance, isQuiet, type, param);
+
+        if (!isQuiet) {
+            printf("[!] Ip: %s, Port %s, Performance mode: %s, Type: %s, Param: %s.\n", ip, port,
+                   (isPerformance == TRUE) ? "True" : "False", type, param);
+        }
+
         return client_chat(ip, port, isPerformance, isQuiet, type, param);
 
     } else {
-        printf("%s----%d---%d--\n", port, isPerformance, isQuiet);
+        if (!isQuiet)printf("[!] Port %s, Performance mode: %s.\n", port, (isPerformance) ? "True" : "False");
         return server_chat(port, isPerformance, isQuiet);
     }
     return 0;

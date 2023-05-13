@@ -1,0 +1,51 @@
+# how to download
+    git clone https://github.com/eytan1998/SYS3.git
+    cd SYS3
+    make default
+
+# partA
+    ## how to run
+        run the server side
+            ./stnc -s <port>
+        and then run the client side
+            ./stnc -c <ip> <port>
+        <ip> the ipv4 address of the server.
+        <port> the port the server bind to.
+
+    ## explain usage
+        this tool is chat every side can type text and the other side can see.
+        until one of the side type "exit".
+
+# partB
+    ## how to run
+        run the server side
+            ./stnc -s <port> -p -q
+        and then run the client side
+            ./stnc -c <ip> <port> -p <type> <param> -q
+        -p flag say we are going to test the performance.
+        -q flag will enable quiet mode, only name_type,time
+        <type> will be the communication types: so it can be ipv4,ipv6,mmap,pipe,uds
+        <param> will be a parameter for the type. It can be udp/tcp or dgram/stream or file name:
+
+        You have only 8 combinations:
+        ipv4 tcp
+        ipv4 udp
+        ipv6 tcp
+        ipv6 udp
+        uds dgram
+        uds stream
+        mmap filename
+        pipe filename
+
+        other usage will result in exit with return 1.
+
+    ## explain usage
+        This tool uses the chat tool to check very of tests.
+        the client send to the server the kind of test he want to preform, and the client print the result.
+        the new test communication is on the <port> form the argv +1.
+        the ip is the same, but if the test is on ipv6 the server send to client is ipv6 address.
+        client generate 100MB data size, make checksum.
+        the client send the data size to the server, and start sending the data.
+        the server get the amount of data, open timer and then the data in chunks of DATA_BUFFER_SIZE and then
+        stop the timer and print the result.
+
